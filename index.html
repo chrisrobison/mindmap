@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<head>
+    <meta charset="utf-8">
+    <title>Mind Map</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <svg class="connections"></svg>
+        <div class="zoom-controls">
+            <button class="zoom-button" onclick="app.zoom('out')" title="Zoom Out">
+                <i class="fas fa-search-minus"></i>
+            </button>
+            <div class="zoom-level">100%</div>
+            <button class="zoom-button" onclick="app.zoom('in')" title="Zoom In">
+                <i class="fas fa-search-plus"></i>
+            </button>
+        </div>
+    </main>
+    <div class="properties-panel">
+        <div id="properties-content"></div>
+    </div>
+    <script>
+class Node {
+    constructor(id, x, y, title = 'New Node', html = '', cssClass = '', style = '') {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.title = title;
+        this.html = html;
+        this.cssClass = cssClass;
+        this.images = [];
+        this.styles = {
+            backgroundColor: '#ffffff',
+            color: '#000000',
+            fontFamily: 'Lexend',
+            fontSize: '16px',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            borderColor: '#cccccc',
+            borderRadius: '5px',
+            boxShadow: '2px 2px 5px rgba(0,0,0,0.1)'
+        };
+        this.width = 150;
+        this.height = 100;
+        this.element = null;
+        this.render();
+        this.setupContentEditing();
+        this.setupImagePaste();
+    }
+
+    setupContentEditing() {
+        const content = this.element.querySelector('.node-content');
+        content.addEventListener('input', () => {
+            this.html = content.innerHTML;
+            app.saveState();
+        });
+
+        content.addEventListener('blur', () => {
+            this.html = content.innerHTML;
+            app.saveState();
+        });
+
+        const header = this.element.querySelector('.node-header');
+        header.addEventListener('input', () => {
+            this.title = header.textContent;
+            app.saveState();
+        });
+
+        header.addEventListener('blur', () => {
+            this.title = header.textContent;
+            app.saveState();
+        });
+    }
+
+setupImagePaste() {
+        const content = this.element.querySelector('.node-content');
+        content.addEventListener('paste', async (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of items) {
+                if (!item.type.startsWith('image/')) continue;
+
+                e.preventDefault();
+                const file = item.getAsFile();
+                let dataurl, reader;
+                if (file.type === "image/gif") {
+                    reader = new FileReader();
+                    reader.onload = (e) => {
+                        dataurl = reader.result;
+                        this.addImage(dataurl);
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    // Only process through canvas if it's not a GIF
+                    try {
+                        const img = new Image();
+                        img.src = reader.result;
+                        await new Promise(resolve => img.onload = resolve);
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        dataurl = canvas.toDataURL(item.type);
+                        this.addImage(dataurl);
+                    } catch (err) {
+                        console.error('Error processing image:', err);
+                        // Fallback to using the direct FileReader result
+                        reader = new FileReader();
+                        reader.onload = (e) => {
+                            dataurl = reader.result;
+                            this.addImage(dataurl);
+                        }
+                        
+                        reader.readAsDataURL(file);
+                    }
+                }
+                // Only process the first image found
+                break;
+            }
+        });
+    }
+    addImage(dataurl) {
+        const content = this.element.querySelector('.node-content');
+        if (dataurl) { 
+            // Create and insert image at cursor position
+            const imgElement = document.createElement('img');
+            imgElement.src = dataurl;
+            imgElement.style.maxWidth = '100%';
+            
+            // Ensure we're inserting at the cursor position if there is one
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0 && selection.getRangeAt(0).commonAncestorContainer.closest('.node-content') === content) {
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(imgElement);
+            } else {
+                content.appendChild(imgElement);
+            }
+
+            // Add a line break after the image for better editing
+            const br = document.createElement('br');
+            imgElement.after(br);
+
+            this.images.push(dataurl);
+            app.saveState();
+        }
+
+
+    }
+
+    getStyleString() {
+        return `
+            background-color: ${this.styles.backgroundColor};
+            color: ${this.styles.color};
+            font-family: ${this.styles.fontFamily};
+            font-size: ${this.styles.fontSize};
+            border-width: ${this.styles.borderWidth};
+            border-style: ${this.styles.borderStyle};
+            border-color: ${this.styles.borderColor};
+            border-radius: ${this.styles.borderRadius};
+            box-shadow: ${this.styles.boxShadow};
+        `;
+    }
+
+    render() {
+        if (!this.element) {
+            this.element = document.createElement('div');
+            this.element.className = `mindmap-node ${this.cssClass}`;
+            this.element.setAttribute('data-id', this.id);
+
+            // Create header
+            const header = document.createElement('div');
+            header.className = 'node-header';
+            header.contentEditable = true;
+            header.spellcheck = false;
+            header.textContent = this.title;
+
+            // Create content area
+            const content = document.createElement('div');
+            content.className = 'node-content';
+            content.contentEditable = true;
+            content.spellcheck = false;
+            content.innerHTML = this.html || '';
+
+            // Add delete button
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'node-delete';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                app.deleteNode(this.id);
+            });
+
+            this.element.appendChild(header);
+            this.element.appendChild(content);
+            this.element.appendChild(deleteBtn);
+            
+            document.querySelector('main').appendChild(this.element);
+            this.setupDragging();
+            this.setupResizing();
+        }
+
+        this.element.style.cssText = `
+            left: ${this.x}px;
+            top: ${this.y}px;
+            width: ${this.width}px;
+            height: ${this.height}px;
+            ${this.getStyleString()}
+        `;
+        
+        return this.element;
+    }
+
+    setupDragging() {
+        const header = this.element.querySelector('.node-header');
+        let isDragging = false;
+        let isConnecting = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let tempLine = null;
+
+        const createTempLine = (x1, y1, x2, y2) => {
+            const svg = document.querySelector('.connections');
+            tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            tempLine.setAttribute('x1', x1);
+            tempLine.setAttribute('y1', y1);
+            tempLine.setAttribute('x2', x2);
+            tempLine.setAttribute('y2', y2);
+            tempLine.setAttribute('stroke', 'var(--primary-color)');
+            tempLine.setAttribute('stroke-width', '2');
+            tempLine.classList.add('temp-connection');
+            svg.appendChild(tempLine);
+            return tempLine;
+        };
+
+        const updateTempLine = (x2, y2) => {
+            if (tempLine) {
+                tempLine.setAttribute('x2', x2);
+                tempLine.setAttribute('y2', y2);
+            }
+        };
+
+        const removeTempLine = () => {
+            if (tempLine) {
+                tempLine.remove();
+                tempLine = null;
+            }
+        };
+
+        header.addEventListener('mousedown', (e) => {
+            if (e.ctrlKey) {
+                isConnecting = true;
+                const rect = this.element.getBoundingClientRect();
+                const startX = rect.left + rect.width / 2;
+                const startY = rect.top + rect.height / 2;
+                createTempLine(startX, startY, e.clientX, e.clientY);
+            } else {
+                isDragging = true;
+                initialX = e.clientX - this.x;
+                initialY = e.clientY - this.y;
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isConnecting) {
+                updateTempLine(e.clientX, e.clientY);
+            } else if (isDragging) {
+                e.preventDefault();
+                currentX = e.clientX - initialX;
+                currentY = e.clientY - initialY;
+                this.x = currentX;
+                this.y = currentY;
+                this.element.style.left = `${this.x}px`;
+                this.element.style.top = `${this.y}px`;
+                app.updateConnections();
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (isConnecting) {
+                const targetNode = app.findNodeAtPosition(e.clientX, e.clientY);
+                if (targetNode && targetNode.id !== this.id) {
+                    app.createConnection(this.id, targetNode.id);
+                }
+                removeTempLine();
+                isConnecting = false;
+            }
+            if (isDragging) {
+                isDragging = false;
+                app.saveState();
+            }
+        });
+    }
+
+    setupResizing() {
+        const observer = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                this.width = entry.contentRect.width;
+                this.height = entry.contentRect.height;
+                app.updateConnections();
+                app.saveState();
+            }
+        });
+        observer.observe(this.element);
+    }
+
+    updateStyle(property, value) {
+        this.styles[property] = value;
+        this.render();
+        app.saveState();
+    }
+}
+
+const app = {
+    nodes: [],
+    connections: [],
+    selectedNode: null,
+    nextId: 1,
+    zoomLevel: 100,
+
+    init() {
+        this.loadState();
+        this.setupEventListeners();
+        this.render();
+    },
+
+    zoom(direction) {
+        const main = document.querySelector('main');
+        const zoomStep = 10;
+        
+        if (direction === 'in' && this.zoomLevel < 200) {
+            this.zoomLevel += zoomStep;
+        } else if (direction === 'out' && this.zoomLevel > 50) {
+            this.zoomLevel -= zoomStep;
+        }
+
+        main.style.transform = `scale(${this.zoomLevel / 100})`;
+        main.style.transformOrigin = 'center center';
+        
+        document.querySelector('.zoom-level').textContent = `${this.zoomLevel}%`;
+        this.updateConnections();
+        this.saveState();
+    },
+
+    setupEventListeners() {
+        document.querySelector('main').addEventListener('click', (e) => {
+            if (e.target.tagName === 'MAIN') {
+                const newNode = this.createNode(e.clientX, e.clientY);
+                if (this.selectedNode) {
+                    this.createConnection(this.selectedNode.id, newNode.id);
+                }
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            const nodeElement = e.target.closest('.mindmap-node');
+            
+            if (nodeElement) {
+                const clickedNodeId = parseInt(nodeElement.dataset.id);
+                const clickedNode = this.nodes.find(n => n.id === clickedNodeId);
+                
+                if (e.ctrlKey && this.selectedNode && this.selectedNode.id !== clickedNodeId) {
+                    this.createConnection(this.selectedNode.id, clickedNodeId);
+                    return;
+                }
+                
+                this.nodes.forEach(node => {
+                    node.element.classList.remove('selected');
+                });
+                nodeElement.classList.add('selected');
+                this.selectedNode = clickedNode;
+                this.updatePropertiesPanel();
+            } else {
+                if (!e.target.closest('.properties-panel')) {
+                    this.nodes.forEach(node => {
+                        node.element.classList.remove('selected');
+                    });
+                    this.selectedNode = null;
+                    this.hidePropertiesPanel();
+                }
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && this.selectedNode) {
+                if (!e.target.matches('input, textarea, [contenteditable=true]')) {
+                    this.deleteNode(this.selectedNode.id);
+                }
+            }
+        });
+
+        document.addEventListener('contextmenu', (e) => {
+            const nodeElement = e.target.closest('.mindmap-node');
+            if (nodeElement) {
+                e.preventDefault();
+                const nodeId = parseInt(nodeElement.dataset.id);
+                if (confirm('Delete this node and its connections?')) {
+                    this.deleteNode(nodeId);
+                }
+            }
+        });
+    },
+
+    createNode(x, y) {
+        const node = new Node(this.nextId++, x, y);
+        this.nodes.push(node);
+        this.saveState();
+        return node;
+    },
+
+    deleteNode(id) {
+        const index = this.nodes.findIndex(n => n.id === id);
+        if (index !== -1) {
+            const node = this.nodes[index];
+            node.element.remove();
+            this.nodes.splice(index, 1);
+            this.connections = this.connections.filter(
+                c => c.from !== id && c.to !== id
+            );
+            this.updateConnections();
+            this.saveState();
+            if (this.selectedNode && this.selectedNode.id === id) {
+                this.selectedNode = null;
+                this.hidePropertiesPanel();
+            }
+        }
+    },
+
+    createConnection(fromId, toId) {
+        if (!this.connections.some(c => 
+            (c.from === fromId && c.to === toId) || 
+            (c.from === toId && c.to === fromId)
+        )) {
+            this.connections.push({ from: fromId, to: toId });
+            this.updateConnections();
+            this.saveState();
+        }
+    },
+
+    updateConnections() {
+        const svg = document.querySelector('.connections');
+        svg.innerHTML = '';
+        
+        this.connections.forEach(conn => {
+            const fromNode = this.nodes.find(n => n.id === conn.from);
+            const toNode = this.nodes.find(n => n.id === conn.to);
+            
+            if (fromNode && toNode) {
+                const fromX = fromNode.x + fromNode.element.offsetWidth / 2;
+                const fromY = fromNode.y + fromNode.element.offsetHeight / 2;
+                const toX = toNode.x + toNode.element.offsetWidth / 2;
+                const toY = toNode.y + toNode.element.offsetHeight / 2;
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', fromX);
+                line.setAttribute('y1', fromY);
+                line.setAttribute('x2', toX);
+                line.setAttribute('y2', toY);
+                line.setAttribute('stroke', 'var(--text-color)');
+                line.setAttribute('stroke-width', '2');
+                svg.appendChild(line);
+            }
+        });
+    },
+
+    updatePropertiesPanel() {
+        const panel = document.querySelector('.properties-panel');
+        const content = document.getElementById('properties-content');
+        
+        if (this.selectedNode) {
+            const styles = this.selectedNode.styles;
+            let html = `
+                <table class="properties-table">
+                    <tr><th colspan="2">Node Properties</th></tr>
+                    <tr>
+                        <td class="label">Title</td>
+                        <td><input type="text" class="style-input" value="${this.selectedNode.title}" 
+                            onchange="app.updateSelectedNodeTitle(this.value)"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Position</td>
+                        <td>
+                            X: <input type="number" class="style-input" style="width: 70px" value="${this.selectedNode.x}" 
+                                onchange="app.updateSelectedNodePosition('x', this.value)">
+                            Y: <input type="number" class="style-input" style="width: 70px" value="${this.selectedNode.y}"
+                                onchange="app.updateSelectedNodePosition('y', this.value)">
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label">Size</td>
+                        <td>
+                            W: <input type="number" class="style-input" style="width: 4em" value="${this.selectedNode.width}"
+                                onchange="app.updateSelectedNodeSize('width', this.value)">
+                            H: <input type="number" class="style-input" style="width: 4em" value="${this.selectedNode.height}"
+                                onchange="app.updateSelectedNodeSize('height', this.value)">
+                        </td>
+                    </tr>
+                    <tr><th colspan="2">Styling</th></tr>
+                    <tr>
+                        <td class="label">Background</td>
+                        <td><input type="color" class="style-input" value="${styles.backgroundColor}"
+                            onchange="app.updateSelectedNodeStyle('backgroundColor', this.value)"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Text Color</td>
+                        <td><input type="color" class="style-input" value="${styles.color}"
+                            onchange="app.updateSelectedNodeStyle('color', this.value)"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Font Family</td>
+                        <td>
+                            <select class="style-input" onchange="app.updateSelectedNodeStyle('fontFamily', this.value)">
+                                <option value="Lexend" ${styles.fontFamily === 'Lexend' ? 'selected' : ''}>Lexend</option>
+                                <option value="Arial" ${styles.fontFamily === 'Arial' ? 'selected' : ''}>Arial</option>
+                                <option value="Times New Roman" ${styles.fontFamily === 'Times New Roman' ? 'selected' : ''}>Times New Roman</option>
+                                <option value="Courier New" ${styles.fontFamily === 'Courier New' ? 'selected' : ''}>Courier New</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label">Font Size</td>
+                        <td><input type="text" class="style-input" value="${styles.fontSize}"
+                            onchange="app.updateSelectedNodeStyle('fontSize', this.value)"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Border Color</td>
+                        <td><input type="color" class="style-input" value="${styles.borderColor}"
+                            onchange="app.updateSelectedNodeStyle('borderColor', this.value)"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Border Width</td>
+                        <td><input type="text" class="style-input" value="${styles.borderWidth}"
+                            onchange="app.updateSelectedNodeStyle('borderWidth', this.value)"></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Border Style</td>
+                        <td>
+                            <select class="style-input" onchange="app.updateSelectedNodeStyle('borderStyle', this.value)">
+                                <option value="solid" ${styles.borderStyle === 'solid' ? 'selected' : ''}>Solid</option>
+                                <option value="dashed" ${styles.borderStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
+                                <option value="dotted" ${styles.borderStyle === 'dotted' ? 'selected' : ''}>Dotted</option>
+                                <option value="double" ${styles.borderStyle === 'double' ? 'selected' : ''}>Double</option>
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+                <div class="image-upload">
+                    <p>Paste an image directly into the node content</p>
+                </div>
+                <button class="delete-btn" onclick="app.deleteNode(${this.selectedNode.id})">Delete Node</button>
+            `;
+            content.innerHTML = html;
+            panel.classList.add('visible');
+        }
+    },
+
+    hidePropertiesPanel() {
+        const panel = document.querySelector('.properties-panel');
+        panel.classList.remove('visible');
+    },
+
+    updateSelectedNodeTitle(value) {
+        if (this.selectedNode) {
+            this.selectedNode.title = value;
+            const header = this.selectedNode.element.querySelector('.node-header');
+            header.textContent = value;
+            this.saveState();
+        }
+    },
+
+    updateSelectedNodePosition(axis, value) {
+        if (this.selectedNode) {
+            this.selectedNode[axis] = parseInt(value);
+            this.selectedNode.element.style[axis === 'x' ? 'left' : 'top'] = `${value}px`;
+            this.updateConnections();
+            this.saveState();
+        }
+    },
+
+    updateSelectedNodeSize(dimension, value) {
+        if (this.selectedNode) {
+            this.selectedNode[dimension] = parseInt(value);
+            this.selectedNode.element.style[dimension] = `${value}px`;
+            this.updateConnections();
+            this.saveState();
+        }
+    },
+
+    updateSelectedNodeStyle(property, value) {
+        if (this.selectedNode) {
+            this.selectedNode.updateStyle(property, value);
+        }
+    },
+
+    findNodeAtPosition(x, y) {
+        return this.nodes.find(node => {
+            const rect = node.element.getBoundingClientRect();
+            return x >= rect.left && x <= rect.right &&
+                   y >= rect.top && y <= rect.bottom;
+        });
+    },
+
+    saveState() {
+        const state = {
+            nodes: this.nodes.map(n => ({
+                id: n.id,
+                x: n.x,
+                y: n.y,
+                width: n.width,
+                height: n.height,
+                title: n.title,
+                html: n.element.querySelector('.node-content').innerHTML,
+                images: n.images,
+                styles: n.styles
+            })),
+            connections: this.connections,
+            nextId: this.nextId,
+            zoomLevel: this.zoomLevel
+        };
+        localStorage.setItem('mindmap', JSON.stringify(state));
+    },
+
+    loadState() {
+        const saved = localStorage.getItem('mindmap');
+        if (saved) {
+            const state = JSON.parse(saved);
+            this.nextId = state.nextId;
+            this.zoomLevel = state.zoomLevel || 100;
+            
+            // Apply zoom level
+            const main = document.querySelector('main');
+            main.style.transform = `scale(${this.zoomLevel / 100})`;
+            document.querySelector('.zoom-level').textContent = `${this.zoomLevel}%`;
+
+            // Create nodes
+            state.nodes.forEach(n => {
+                const node = new Node(n.id, n.x, n.y, n.title);
+                node.width = n.width;
+                node.height = n.height;
+                node.styles = n.styles || node.styles;
+                
+                const content = node.element.querySelector('.node-content');
+                content.innerHTML = n.html || '';
+                
+                node.images = n.images || [];
+                this.nodes.push(node);
+            });
+
+            // Restore connections
+            this.connections = state.connections;
+            this.updateConnections();
+        }
+    },
+
+    render() {
+        const svg = document.querySelector('.connections');
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        this.updateConnections();
+    }
+};
+
+window.app = app;
+app.init();
+    </script>
+</body>
+</html>

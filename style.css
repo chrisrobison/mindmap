@@ -1,0 +1,296 @@
+:root {
+    --header-background: #666;
+    --header-color: #fff;
+    box-sizing: border-box;
+    font-family: "Lexend", "Helvetica Neue", "Helvetica", sans-serif;
+    font-size: 16px;
+    --primary-color: #2563eb;
+    --secondary-color: #1e40af;
+    --bg-secondary-color: #fff;
+    --bg-color: #f3f4f6;
+    --text-color: #1f2937;
+    --border-color: #e5e7eb;
+    --success-color: #059669;
+    --danger-color: #dc2626;
+    --card-bg: white;
+    --hover-bg: #f3f4f6;
+    --modal-overlay: rgba(0, 0, 0, 0.7);
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --highlight: #fff6;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --header-background: #3b82f6;
+        --header-color: #e5e7eb;
+        --primary-color: #3b82f6;
+        --secondary-color: #60a5fa;
+        --bg-color: #32373e;
+        --bg-secondary-color: #111;
+        --bg-secondary-color: #1f2937;
+        --text-color: #e5e7eb;
+        --border-color: #374151;
+        --success-color: #10b981;
+        --danger-color: #ef4444;
+        --card-bg: #1f2937;
+        --hover-bg: #374151;
+        --modal-overlay: #0009;
+        --shadow-color: rgba(0, 0, 0, 0.3);
+        --highlight: #0006;
+        color-scheme: dark;
+    }
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s ease;
+    transform-origin: center center;
+}
+
+.mindmap-node {
+    position: absolute;
+    min-width: 100px;
+    min-height: 50px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    user-select: none;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    resize: both;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.node-header {
+    padding: 8px 12px;
+    background: var(--header-background);
+    color: var(--header-color);
+    cursor: move;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    font-weight: 500;
+    font-size: 14px;
+    min-height: 20px;
+    user-select: none;
+}
+
+.node-content {
+    padding: 10px;
+    flex: 1;
+    min-height: 30px;
+    outline: none;
+    overflow-y: auto;
+    background: var(--card-bg);
+    color: var(--text-color);
+}
+
+.node-content img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 5px 0;
+}
+
+.mindmap-node.selected {
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 0 10px rgba(0,123,255,0.3);
+}
+
+.node-delete {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 24px;
+    height: 24px;
+    background: var(--highlight);
+    color: var(--text-color);
+    border-radius: 50%;
+    border: var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 2;
+}
+
+.mindmap-node:hover .node-delete {
+    opacity: 1;
+}
+
+.node-delete:hover {
+    transform: scale(1.1);
+    background: var(--danger-color);
+    color: white;
+}
+
+.connections {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.connections line {
+    stroke: var(--text-color);
+    stroke-width: 2;
+    transition: stroke 0.3s;
+}
+
+.connections line:hover {
+    stroke: var(--primary-color);
+    stroke-width: 3;
+}
+
+.zoom-controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: var(--card-bg);
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px var(--shadow-color);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    z-index: 1000;
+    border: 1px solid var(--border-color);
+}
+
+.zoom-button {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.zoom-button:hover {
+    background: var(--secondary-color);
+    transform: scale(1.05);
+}
+
+.zoom-button:active {
+    transform: scale(0.95);
+}
+
+.zoom-level {
+    min-width: 60px;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.properties-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 350px;
+    height: 100vh;
+    background: var(--bg-color);
+    border-left: 1px solid var(--border-color);
+    padding: 20px;
+    box-shadow: -2px 0 5px var(--shadow-color);
+    transform: translateX(100%);
+    transition: transform 0.3s;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.properties-panel.visible {
+    transform: translateX(0);
+}
+
+.properties-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+.properties-table th,
+.properties-table td {
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+.properties-table th {
+    background: var(--header-background);
+    color: var(--header-color);
+    font-weight: 500;
+}
+
+.label {
+    font-size: 0.9em;
+    color: var(--text-color);
+    font-weight: 300;
+    padding-right: 8px;
+}
+
+.style-input {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary-color);
+    color: var(--text-color);
+    font-size: 14px;
+}
+
+.style-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.image-upload {
+    margin: 15px 0;
+    padding: 15px;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    text-align: center;
+    background: var(--card-bg);
+}
+
+.delete-btn {
+    width: 100%;
+    padding: 8px;
+    background: var(--danger-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.delete-btn:hover {
+    background: #b91c1c;
+}
+
