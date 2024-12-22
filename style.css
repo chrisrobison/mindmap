@@ -17,6 +17,8 @@
     --modal-overlay: rgba(0, 0, 0, 0.7);
     --shadow-color: rgba(0, 0, 0, 0.1);
     --highlight: #fff6;
+    --font-family: "Lexend", "Helvetica Neue", "Helvetica", sans-serif;
+    --font-size: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +39,8 @@
         --modal-overlay: #0009;
         --shadow-color: rgba(0, 0, 0, 0.3);
         --highlight: #0006;
+        --font-family: "Lexend", "Helvetica Neue", "Helvetica", sans-serif;
+        --font-size: 16px;
         color-scheme: dark;
     }
 }

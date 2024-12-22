@@ -25,6 +25,20 @@
         <div id="properties-content"></div>
     </div>
     <script>
+// First, let's create a binding helper
+const createBindings = (target, onChange) => {
+    return new Proxy(target, {
+        set(obj, prop, value) {
+            const result = Reflect.set(obj, prop, value);
+            onChange(prop, value);
+            return result;
+        },
+        get(obj, prop) {
+            return obj[prop];
+        }
+    });
+};
+
 class Node {
     constructor(id, x, y, title = 'New Node', html = '', cssClass = '', style = '') {
         this.id = id;
@@ -47,10 +61,61 @@ class Node {
         };
         this.width = 150;
         this.height = 100;
+
+        this.properties = createBindings({
+            id,
+            x,
+            y,
+            title,
+            width: 150,
+            height: 100,
+            styles: {
+                backgroundColor: '#ffffff',
+                color: '#000000',
+                fontFamily: 'Lexend',
+                fontSize: '16px',
+                borderWidth: '1px',
+                borderStyle: 'solid',
+                borderColor: '#cccccc',
+                borderRadius: '5px',
+                boxShadow: '2px 2px 5px rgba(0,0,0,0.1)'
+            }
+        }, (prop, value) => this.handlePropertyChange(prop, value));
+
         this.element = null;
         this.render();
         this.setupContentEditing();
         this.setupImagePaste();
+    }
+
+    handlePropertyChange(prop, value) {
+        // Handle property changes and update UI
+        if (this.element) {
+            if (prop === 'x') {
+                this.element.style.left = `${value}px`;
+            } else if (prop === 'y') {
+                this.element.style.top = `${value}px`;
+            } else if (prop === 'title') {
+                const header = this.element.querySelector('.node-header');
+                if (header) header.textContent = value;
+            } else if (prop === 'width') {
+                this.element.style.width = `${value}px`;
+            } else if (prop === 'height') {
+                this.element.style.height = `${value}px`;
+            } else if (prop.startsWith('styles.')) {
+                this.updateStyles();
+            }
+            app.updateConnections();
+            app.saveState();
+        }
+    }
+
+    updateStyles() {
+        if (this.element) {
+            Object.entries(this.properties.styles).forEach(([key, value]) => {
+                this.element.style[key] = value;
+            });
+        }
     }
 
     setupContentEditing() {
@@ -282,6 +347,9 @@ setupImagePaste() {
                 this.y = currentY;
                 this.element.style.left = `${this.x}px`;
                 this.element.style.top = `${this.y}px`;
+                document.querySelector("#nodeX").value = currentX;
+                document.querySelector("#nodeY").value = currentY;
+
                 app.updateConnections();
             }
         });
@@ -479,47 +547,42 @@ const app = {
         
         if (this.selectedNode) {
             const styles = this.selectedNode.styles;
+            const props = this.selectedNode;
             let html = `
                 <table class="properties-table">
                     <tr><th colspan="2">Node Properties</th></tr>
                     <tr>
                         <td class="label">Title</td>
-                        <td><input type="text" class="style-input" value="${this.selectedNode.title}" 
-                            onchange="app.updateSelectedNodeTitle(this.value)"></td>
+                        <td><input type="text" class="style-input" value="${this.selectedNode.title}"></td>
                     </tr>
                     <tr>
                         <td class="label">Position</td>
                         <td>
-                            X: <input type="number" class="style-input" style="width: 70px" value="${this.selectedNode.x}" 
-                                onchange="app.updateSelectedNodePosition('x', this.value)">
-                            Y: <input type="number" class="style-input" style="width: 70px" value="${this.selectedNode.y}"
-                                onchange="app.updateSelectedNodePosition('y', this.value)">
+                            X: <input id="nodeX" type="number" data-bind="x" style="width:4em;" value="${props.x}">
+                            Y: <input id="nodeY" type="number" data-bind="y" style="width:4em;" value="${props.y}">
                         </td>
                     </tr>
                     <tr>
                         <td class="label">Size</td>
                         <td>
-                            W: <input type="number" class="style-input" style="width: 4em" value="${this.selectedNode.width}"
-                                onchange="app.updateSelectedNodeSize('width', this.value)">
-                            H: <input type="number" class="style-input" style="width: 4em" value="${this.selectedNode.height}"
-                                onchange="app.updateSelectedNodeSize('height', this.value)">
+                            W: <input id="nodeWidth" type="number" style="width:4em;" data-bind="width" value="${props.width}">
+                            H: <input id="nodeHeight" type="number" style="width:4em;" data-bind="height" value="${props.height}">
                         </td>
                     </tr>
                     <tr><th colspan="2">Styling</th></tr>
                     <tr>
                         <td class="label">Background</td>
-                        <td><input type="color" class="style-input" value="${styles.backgroundColor}"
-                            onchange="app.updateSelectedNodeStyle('backgroundColor', this.value)"></td>
+                        <td><input type="color" data-bind="styles.backgroundColor" value="${props.styles.backgroundColor}"></td>
                     </tr>
                     <tr>
                         <td class="label">Text Color</td>
-                        <td><input type="color" class="style-input" value="${styles.color}"
-                            onchange="app.updateSelectedNodeStyle('color', this.value)"></td>
+                        <td><input type="color" class="style-input" data-bind="styles.color" value="${styles.color}">
+                            </td>
                     </tr>
                     <tr>
                         <td class="label">Font Family</td>
                         <td>
-                            <select class="style-input" onchange="app.updateSelectedNodeStyle('fontFamily', this.value)">
+                            <select class="style-input" data-bind="styles.fontFamily">
                                 <option value="Lexend" ${styles.fontFamily === 'Lexend' ? 'selected' : ''}>Lexend</option>
                                 <option value="Arial" ${styles.fontFamily === 'Arial' ? 'selected' : ''}>Arial</option>
                                 <option value="Times New Roman" ${styles.fontFamily === 'Times New Roman' ? 'selected' : ''}>Times New Roman</option>
@@ -529,23 +592,20 @@ const app = {
                     </tr>
                     <tr>
                         <td class="label">Font Size</td>
-                        <td><input type="text" class="style-input" value="${styles.fontSize}"
-                            onchange="app.updateSelectedNodeStyle('fontSize', this.value)"></td>
+                        <td><input type="text" class="style-input" data-bind="styles.fontSize" value="${styles.fontSize}"></td>
                     </tr>
                     <tr>
                         <td class="label">Border Color</td>
-                        <td><input type="color" class="style-input" value="${styles.borderColor}"
-                            onchange="app.updateSelectedNodeStyle('borderColor', this.value)"></td>
+                        <td><input type="color" class="style-input" data-bind="styles.borderColor" value="${styles.borderColor}"></td>
                     </tr>
                     <tr>
                         <td class="label">Border Width</td>
-                        <td><input type="text" class="style-input" value="${styles.borderWidth}"
-                            onchange="app.updateSelectedNodeStyle('borderWidth', this.value)"></td>
+                        <td><input type="text" class="style-input" data-bind="styles.borderWidth" value="${styles.borderWidth}"></td>
                     </tr>
                     <tr>
                         <td class="label">Border Style</td>
                         <td>
-                            <select class="style-input" onchange="app.updateSelectedNodeStyle('borderStyle', this.value)">
+                            <select class="style-input" data-bind="styles.borderStyle">
                                 <option value="solid" ${styles.borderStyle === 'solid' ? 'selected' : ''}>Solid</option>
                                 <option value="dashed" ${styles.borderStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
                                 <option value="dotted" ${styles.borderStyle === 'dotted' ? 'selected' : ''}>Dotted</option>
@@ -560,6 +620,27 @@ const app = {
                 <button class="delete-btn" onclick="app.deleteNode(${this.selectedNode.id})">Delete Node</button>
             `;
             content.innerHTML = html;
+            
+            // Set up binding listeners
+            content.querySelectorAll('[data-bind]').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    const prop = e.target.dataset.bind;
+                    let value = e.target.value;
+
+                    // Handle nested properties
+                    if (prop.includes('.')) {
+                        const [obj, key] = prop.split('.');
+                        props[obj][key] = value;
+                    } else {
+                        // Convert to number if needed
+                        if (input.type === 'number') {
+                            value = parseFloat(value) || 0;
+                        }
+                        props[prop] = value;
+                    }
+                });
+            });
+
             panel.classList.add('visible');
         }
     },
