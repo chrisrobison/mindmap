@@ -347,23 +347,29 @@ setupImagePaste() {
                 this.y = currentY;
                 this.element.style.left = `${this.x}px`;
                 this.element.style.top = `${this.y}px`;
-                document.querySelector("#nodeX").value = currentX;
-                document.querySelector("#nodeY").value = currentY;
+                
+                if (document.querySelector("#nodeX")) document.querySelector("#nodeX").value = currentX;
+                if (document.querySelector("#nodeY")) document.querySelector("#nodeY").value = currentY;
 
                 app.updateConnections();
             }
         });
 
         document.addEventListener('mouseup', (e) => {
+            console.log("in mouseup");
             if (isConnecting) {
+                console.log("we are connecting!");
                 const targetNode = app.findNodeAtPosition(e.clientX, e.clientY);
+                console.log(`targetNode.id: ${targetNode.id} this.id: ${this.id}`);
                 if (targetNode && targetNode.id !== this.id) {
+                    console.log(`Creating connection from ${this.id} to ${targetNode.id}`);
                     app.createConnection(this.id, targetNode.id);
                 }
                 removeTempLine();
                 isConnecting = false;
             }
             if (isDragging) {
+                console.log("we are dragging");
                 isDragging = false;
                 app.saveState();
             }
@@ -389,10 +395,174 @@ setupImagePaste() {
     }
 }
 
+class Connection {
+    constructor(fromId, toId) {
+        this.id = `conn-${fromId}-${toId}`;
+        this.fromId = fromId;
+        this.toId = toId;
+        this.controlPoint1 = { x: 0, y: 0 };
+        this.controlPoint2 = { x: 0, y: 0 };
+        this.selected = false;
+        this.element = null;
+    }
+
+    calculateDefaultControlPoints(fromNode, toNode) {
+        const fromX = fromNode.x + fromNode.width / 2;
+        const fromY = fromNode.y + fromNode.height / 2;
+        const toX = toNode.x + toNode.width / 2;
+        const toY = toNode.y + toNode.height / 2;
+
+        // Set control points at 1/3 and 2/3 distance between nodes
+        const dx = toX - fromX;
+        const dy = toY - fromY;
+
+        this.controlPoint1 = {
+            x: fromX + dx / 3,
+            y: fromY + dy / 3
+        };
+
+        this.controlPoint2 = {
+            x: fromX + (dx * 2) / 3,
+            y: fromY + (dy * 2) / 3
+        };
+    }
+
+    render(svg, fromNode, toNode) {
+        // Always create a new element
+        if (this.element) {
+            this.element.remove();
+        }
+
+        this.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        
+        this.element.setAttribute('class', 'connection');
+        this.element.setAttribute('data-id', this.id);
+        this.element.addEventListener("click", (e) => {
+            this.element.classList.toggle("selected");
+            this.render(svg, fromNode, toNode);
+        });
+        // Create the path element for the bezier curve
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', '#fffa'); // Use direct color instead of var()
+        path.setAttribute('stroke-width', '2');
+
+        this.element.appendChild(path);
+
+        // Create control point handles
+        this.createControlPoint(1);
+        this.createControlPoint(2);
+
+        svg.appendChild(this.element);
+        
+        // Calculate positions if not set
+        if (!this.controlPoint1.x && !this.controlPoint1.y) {
+            this.calculateDefaultControlPoints(fromNode, toNode);
+        }
+
+        // Update the path
+        const fromX = fromNode.x + fromNode.width / 2;
+        const fromY = fromNode.y + fromNode.height / 2;
+        const toX = toNode.x + toNode.width / 2;
+        const toY = toNode.y + toNode.height / 2;
+
+        const pathD = `M ${fromX} ${fromY} ` +
+                     `C ${this.controlPoint1.x} ${this.controlPoint1.y}, ` +
+                     `${this.controlPoint2.x} ${this.controlPoint2.y}, ` +
+                     `${toX} ${toY}`;
+
+        path.setAttribute('d', pathD);
+
+        // Update control points
+        this.updateControlPoints();
+
+        // Show/hide control points based on selection
+        const handles = this.element.querySelectorAll('.control-point');
+        handles.forEach(handle => {
+//            handle.style.display = this.selected ? 'block' : 'none';
+        });
+    }
+
+    createControlPoint(number) {
+        const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        handle.setAttribute('class', 'control-point');
+        handle.setAttribute('r', '5');
+        handle.setAttribute('fill', 'var(--primary-color)');
+        handle.setAttribute('data-point', number);
+        this.element.appendChild(handle);
+    }
+
+    updateControlPoints() {
+        const handles = this.element.querySelectorAll('.control-point');
+        handles.forEach(handle => {
+            const pointNum = parseInt(handle.getAttribute('data-point'));
+            const point = pointNum === 1 ? this.controlPoint1 : this.controlPoint2;
+            handle.setAttribute('cx', point.x);
+            handle.setAttribute('cy', point.y);
+        });
+    }
+    setupEventListeners() {
+        let isDragging = false;
+        let currentPoint = null;
+        let initialX, initialY;
+
+        // Handle mousedown on control points
+        this.element.querySelectorAll('.control-point').forEach(point => {
+            point.addEventListener('mousedown', (e) => {
+                console.log("control-point mousedown");
+                e.stopPropagation();
+                isDragging = true;
+                currentPoint = parseInt(e.target.getAttribute('data-point'));
+                const point = currentPoint === 1 ? this.controlPoint1 : this.controlPoint2;
+                initialX = e.clientX - point.x;
+                initialY = e.clientY - point.y;
+            });
+        });
+
+        // Handle mousemove for dragging
+        const handleMouseMove = (e) => {
+            if (isDragging && currentPoint) {
+                console.log(`handleMouseMove isDragging & currentPoint`);
+                e.preventDefault();
+                const point = currentPoint === 1 ? this.controlPoint1 : this.controlPoint2;
+                point.x = e.clientX - initialX;
+                point.y = e.clientY - initialY;
+                
+                // Update the display
+                const fromNode = app.nodes.find(n => n.id === this.fromId);
+                const toNode = app.nodes.find(n => n.id === this.toId);
+                if (fromNode && toNode) {
+                    this.render(this.element.ownerSVGElement, fromNode, toNode);
+                }
+            }
+        };
+
+        // Handle mouseup to stop dragging
+        const handleMouseUp = () => {
+            if (isDragging) {
+                isDragging = false;
+                currentPoint = null;
+                app.saveState();
+            }
+        };
+
+        // Add global event listeners
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        // Click to select connection
+        this.element.addEventListener('click', (e) => {
+            e.stopPropagation();
+            app.selectConnection(this);
+        });
+    }
+}
+
 const app = {
     nodes: [],
     connections: [],
     selectedNode: null,
+    selectedConnection: null,
     nextId: 1,
     zoomLevel: 100,
 
@@ -493,7 +663,7 @@ const app = {
             node.element.remove();
             this.nodes.splice(index, 1);
             this.connections = this.connections.filter(
-                c => c.from !== id && c.to !== id
+                c => c.fromId !== id && c.toId !== id
             );
             this.updateConnections();
             this.saveState();
@@ -505,42 +675,61 @@ const app = {
     },
 
     createConnection(fromId, toId) {
+        console.log("in createConnection");
         if (!this.connections.some(c => 
-            (c.from === fromId && c.to === toId) || 
-            (c.from === toId && c.to === fromId)
+            (c.fromId === fromId && c.toId === toId) || 
+            (c.fromId === toId && c.toId === fromId)
         )) {
-            this.connections.push({ from: fromId, to: toId });
+            console.log("new connection");
+            const connection = new Connection(fromId, toId);
+            this.connections.push(connection);
+            console.log("created new connection", connection);
             this.updateConnections();
             this.saveState();
         }
     },
 
+    selectConnection(connection) {
+        if (this.selectedConnection) {
+            this.selectedConnection.selected = false;
+        }
+        this.selectedConnection = connection;
+        connection.selected = true;
+        this.updateConnections();
+    },
+
     updateConnections() {
         const svg = document.querySelector('.connections');
-        svg.innerHTML = '';
+        if (!svg) return;
+
+        // Ensure SVG has proper attributes
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.style.position = 'absolute';
+        // svg.style.pointerEvents = 'none';
+        svg.style.zIndex = '1';
         
+        // Remove existing connection elements
+        const existingConnections = svg.querySelectorAll('.connection');
+        existingConnections.forEach(conn => conn.remove());
+        
+        // Add all connections
         this.connections.forEach(conn => {
-            const fromNode = this.nodes.find(n => n.id === conn.from);
-            const toNode = this.nodes.find(n => n.id === conn.to);
+            const fromNode = this.nodes.find(n => n.id === conn.fromId);
+            const toNode = this.nodes.find(n => n.id === conn.toId);
             
             if (fromNode && toNode) {
-                const fromX = fromNode.x + fromNode.element.offsetWidth / 2;
-                const fromY = fromNode.y + fromNode.element.offsetHeight / 2;
-                const toX = toNode.x + toNode.element.offsetWidth / 2;
-                const toY = toNode.y + toNode.element.offsetHeight / 2;
-
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', fromX);
-                line.setAttribute('y1', fromY);
-                line.setAttribute('x2', toX);
-                line.setAttribute('y2', toY);
-                line.setAttribute('stroke', 'var(--text-color)');
-                line.setAttribute('stroke-width', '2');
-                svg.appendChild(line);
+                conn.render(svg, fromNode, toNode);
+                // Enable pointer events for the connection elements
+                if (conn.element) {
+                    conn.element.style.pointerEvents = 'all';
+                    conn.element.querySelectorAll('*').forEach(el => {
+                        el.style.pointerEvents = 'all';
+                    });
+                }
             }
         });
     },
-
     updatePropertiesPanel() {
         const panel = document.querySelector('.properties-panel');
         const content = document.getElementById('properties-content');
@@ -614,9 +803,6 @@ const app = {
                         </td>
                     </tr>
                 </table>
-                <div class="image-upload">
-                    <p>Paste an image directly into the node content</p>
-                </div>
                 <button class="delete-btn" onclick="app.deleteNode(${this.selectedNode.id})">Delete Node</button>
             `;
             content.innerHTML = html;
@@ -704,13 +890,19 @@ const app = {
                 images: n.images,
                 styles: n.styles
             })),
-            connections: this.connections,
+            connections: this.connections.map(c => ({
+                fromId: c.fromId,
+                toId: c.toId,
+                controlPoint1: c.controlPoint1,
+                controlPoint2: c.controlPoint2
+            })),
             nextId: this.nextId,
             zoomLevel: this.zoomLevel
         };
         localStorage.setItem('mindmap', JSON.stringify(state));
     },
 
+    // Update the loadState method to handle connection loading:
     loadState() {
         const saved = localStorage.getItem('mindmap');
         if (saved) {
@@ -737,12 +929,16 @@ const app = {
                 this.nodes.push(node);
             });
 
-            // Restore connections
-            this.connections = state.connections;
+            // Restore connections with control points
+            this.connections = state.connections.map(c => {
+                const conn = new Connection(c.fromId, c.toId);
+                conn.controlPoint1 = c.controlPoint1;
+                conn.controlPoint2 = c.controlPoint2;
+                return conn;
+            });
             this.updateConnections();
         }
     },
-
     render() {
         const svg = document.querySelector('.connections');
         svg.setAttribute('width', '100%');

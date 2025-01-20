@@ -44,7 +44,9 @@
         color-scheme: dark;
     }
 }
-
+* {
+    box-sizing: border-box;
+}
 body {
     background-color: var(--bg-color);
     color: var(--text-color);
@@ -77,6 +79,7 @@ main {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    z-index: 100;
 }
 
 .node-header {
@@ -219,7 +222,7 @@ main {
     height: 100vh;
     background: var(--bg-color);
     border-left: 1px solid var(--border-color);
-    padding: 20px;
+    padding: 0;
     box-shadow: -2px 0 5px var(--shadow-color);
     transform: translateX(100%);
     transition: transform 0.3s;
@@ -297,4 +300,51 @@ main {
 .delete-btn:hover {
     background: #b91c1c;
 }
+.connection path {
+    cursor: pointer;
+    transition: stroke-width 0.2s;
+}
 
+.connection path:hover {
+    stroke-width: 3;
+}
+
+.connection.selected path {
+    stroke: var(--primary-color, #ffffe2);
+    stroke-width: 3;
+}
+.connection:hover .control-point {
+    opacity: 1;
+}
+.control-point {
+    cursor: move;
+    fill: #4a90e2;
+    stroke: white;
+    stroke-width: 2;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    transform: scale(1);
+}
+
+.connection.selected .control-point {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.control-point:hover {
+    fill: #2171d3;
+    transform: scale(1);
+}
+
+/* Add guide lines for control points */
+.control-line {
+    stroke: #4a90e2;
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.connection:hover.control-line, .connection.selected .control-line {
+    opacity: 0.5;
+}
